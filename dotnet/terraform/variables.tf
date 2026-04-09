@@ -12,8 +12,8 @@ variable "prefix" {
 
 variable "image_tag" {
   type        = string
-  description = "Container image tag for the .NET app (and default tag for the collector unless collector_image_tag is set)."
-  default     = "v1"
+  description = "Container image tag for the .NET app (and default tag for the collector unless collector_image_tag is set). Bump and rebuild in ACR after app code changes."
+  default     = "v4"
 }
 
 variable "collector_image_tag" {

@@ -2,9 +2,9 @@
 
 location       = "eastus2"
 prefix         = "acadotlab"
-image_tag      = "v1"
-# Optional: after rebuilding only the collector image in ACR, bump this tag and apply.
-# collector_image_tag = "v2"
+image_tag      = "v4"
+# Optional: collector image tag if different from image_tag (e.g. only rebuilt sidecar).
+# collector_image_tag = "v3"
 
 min_replicas             = 0
 max_replicas             = 2
