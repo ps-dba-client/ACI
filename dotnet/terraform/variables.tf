@@ -12,8 +12,15 @@ variable "prefix" {
 
 variable "image_tag" {
   type        = string
-  description = "Container image tag pushed to ACR (must exist before the full terraform apply)."
+  description = "Container image tag for the .NET app (and default tag for the collector unless collector_image_tag is set)."
   default     = "v1"
+}
+
+variable "collector_image_tag" {
+  type        = string
+  nullable    = true
+  default     = null
+  description = "Optional: tag only for aca-otel-collector (e.g. v2 after changing collector.yaml). Defaults to image_tag."
 }
 
 variable "min_replicas" {
@@ -58,5 +65,17 @@ variable "splunk_source" {
 variable "splunk_hec_token" {
   type        = string
   description = "Splunk HEC token (set via environment as TF_VAR_splunk_hec_token or a private .tfvars file — never commit)."
+  sensitive   = true
+}
+
+variable "splunk_observability_realm" {
+  type        = string
+  description = "Splunk Observability Cloud realm (e.g. us1, us0, eu0). Builds api.<realm>.signalfx.com and ingest.<realm>.signalfx.com."
+  default     = "us1"
+}
+
+variable "splunk_observability_access_token" {
+  type        = string
+  description = "Splunk Observability Cloud access token (traces + metrics). TF_VAR_splunk_observability_access_token or private .tfvars — never commit."
   sensitive   = true
 }

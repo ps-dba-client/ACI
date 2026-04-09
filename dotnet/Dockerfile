@@ -1,17 +1,4 @@
-# syntax=docker/dockerfile:1
-
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
-COPY src/AcaOtelLab/AcaOtelLab.csproj ./AcaOtelLab/
-RUN dotnet restore ./AcaOtelLab/AcaOtelLab.csproj
-COPY src/AcaOtelLab/ ./AcaOtelLab/
-WORKDIR /src/AcaOtelLab
-RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
-
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/publish .
-ENV ASPNETCORE_URLS=http://+:8080 \
-    DOTNET_EnableDiagnostics=0
-EXPOSE 8080
-ENTRYPOINT ["dotnet", "AcaOtelLab.dll"]
+# Splunk OTel Collector sidecar with lab OTLP → HEC config (no secrets in image).
+# Build from repo root (dotnet/): az acr build -f otel-collector/Dockerfile -t aca-otel-collector:v1 .
+FROM quay.io/signalfx/splunk-otel-collector:0.108.1
+COPY otel-collector/collector.yaml /etc/splunk-otel/collector.yaml

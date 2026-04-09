@@ -5,9 +5,12 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  base_name       = "${var.prefix}-${random_string.suffix.result}"
-  app_image       = "${azurerm_container_registry.acr.login_server}/aca-otel-dotnet:${var.image_tag}"
-  collector_image = "${azurerm_container_registry.acr.login_server}/aca-otel-collector:${var.image_tag}"
+  base_name         = "${var.prefix}-${random_string.suffix.result}"
+  collector_img_tag = var.collector_image_tag != null && var.collector_image_tag != "" ? var.collector_image_tag : var.image_tag
+  app_image         = "${azurerm_container_registry.acr.login_server}/aca-otel-dotnet:${var.image_tag}"
+  collector_image   = "${azurerm_container_registry.acr.login_server}/aca-otel-collector:${local.collector_img_tag}"
+  splunk_ingest_url = "https://ingest.${var.splunk_observability_realm}.signalfx.com"
+  splunk_api_url    = "https://api.${var.splunk_observability_realm}.signalfx.com"
 }
 
 resource "azurerm_resource_group" "main" {
@@ -58,6 +61,11 @@ resource "azurerm_container_app" "main" {
     value = var.splunk_hec_token
   }
 
+  secret {
+    name  = "splunk-o11y-access-token"
+    value = var.splunk_observability_access_token
+  }
+
   registry {
     server               = azurerm_container_registry.acr.login_server
     username             = azurerm_container_registry.acr.admin_username
@@ -79,6 +87,21 @@ resource "azurerm_container_app" "main" {
       env {
         name        = "SPLUNK_HEC_TOKEN"
         secret_name = "splunk-hec-token"
+      }
+
+      env {
+        name        = "SPLUNK_ACCESS_TOKEN"
+        secret_name = "splunk-o11y-access-token"
+      }
+
+      env {
+        name  = "SPLUNK_INGEST_URL"
+        value = local.splunk_ingest_url
+      }
+
+      env {
+        name  = "SPLUNK_API_URL"
+        value = local.splunk_api_url
       }
 
       env {

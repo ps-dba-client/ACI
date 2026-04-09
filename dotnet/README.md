@@ -26,6 +26,14 @@ See inline documentation in `src/AcaOtelLab/Program.cs` for client-facing notes 
 
 ## Architecture
 
+Telemetry is split in the **Splunk OpenTelemetry Collector** sidecar:
+
+| Signal | Destination |
+|--------|--------------|
+| **Logs** | Splunk Cloud via **HEC** (`splunk_hec` exporter) |
+| **Traces** | Splunk **Observability Cloud** — OTLP/HTTP to `ingest.<realm>.signalfx.com` |
+| **Metrics** | Splunk **Observability Cloud** — **SignalFx** exporter |
+
 ```mermaid
 flowchart LR
   subgraph ACA[Azure Container App revision]
@@ -34,10 +42,17 @@ flowchart LR
   end
   Browser[Client / simulate_traffic.py] --> A
   A -->|OTLP gRPC| C
-  C -->|HEC JSON| Splunk[Splunk Platform]
+  C -->|HEC| SplunkCloud[Splunk Cloud index]
+  C -->|OTLP trace + SFx metrics| O11y[Splunk Observability Cloud]
 ```
 
 Both containers share the **same network namespace**; the app uses `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317`.
+
+Terraform variables (see `terraform.tfvars.example`):
+
+- **`splunk_hec_token`** / **`splunk_hec_url`** / **`splunk_index`** — Splunk Cloud log path.
+- **`splunk_observability_access_token`** — Observability **access** token (not the HEC token).
+- **`splunk_observability_realm`** — e.g. `us1` → `https://ingest.us1.signalfx.com` and `https://api.us1.signalfx.com`.
 
 ## Prerequisites (Windows-oriented)
 
@@ -171,3 +186,4 @@ The `/work` endpoint returns a **`trace_id`** JSON field for quick copy/paste du
 - If the collector fails to expand `${env:...}` in `collector.yaml`, check your Splunk OTel Collector version; this lab pins **`0.108.1`** in `otel-collector/Dockerfile`.
 - Confirm **HEC URL** matches your Splunk Cloud stack (`https://http-inputs-…splunkcloud.com/services/collector/event` is common for structured events).
 - Use **Azure Portal → Container App → Logs** if revisions fail to start (image pull, probe, etc.).
+- **`terraform output public_url`** uses the stable **ingress** hostname (same as Azure CLI `show --query properties.configuration.ingress.fqdn`). If you changed only the collector image, bump **`collector_image_tag`**, rebuild that image in ACR, and `terraform apply -var='collector_image_tag=…'`.

@@ -15,10 +15,16 @@ output "container_app_name" {
 }
 
 output "container_app_fqdn" {
-  value = azurerm_container_app.main.latest_revision_fqdn
+  description = "Stable app hostname (routes to latest revision)."
+  value       = azurerm_container_app.main.ingress[0].fqdn
 }
 
 output "public_url" {
   description = "Base URL for the sample API (HTTPS)."
-  value       = "https://${azurerm_container_app.main.latest_revision_fqdn}"
+  value       = "https://${azurerm_container_app.main.ingress[0].fqdn}"
+}
+
+output "latest_revision_fqdn" {
+  description = "Direct FQDN of the current revision (for debugging)."
+  value       = azurerm_container_app.main.latest_revision_fqdn
 }
