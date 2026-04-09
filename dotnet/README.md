@@ -11,7 +11,7 @@ This layout is suitable for workshops: **minimal SKU choices**, optional **scale
 
 | Telemetry | How |
 |-----------|-----|
-| **Traces** | ASP.NET Core + `HttpClient` instrumentation, plus a custom `ActivitySource` with **three manual spans** (`lab.workflow`, `lab.fetch-details`, `lab.persist-result`) under the inbound HTTP span. |
+| **Traces** | **Automatic only**: ASP.NET Core (inbound HTTP) + `HttpClient` (outbound). `/work` performs two loopback HTTP calls so you see **one server span + two client spans** in Observability without custom code. |
 | **Logs** | `ILogger` via **OpenTelemetry logging** → OTLP → collector → Splunk HEC. |
 | **Correlation** | OpenTelemetry attaches **trace** context to **log records** when `Activity.Current` is set (typical for request-scoped work). In Splunk, use the same **trace ID** on logs and traces. |
 

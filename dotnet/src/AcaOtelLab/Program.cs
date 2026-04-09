@@ -1,28 +1,26 @@
 // -----------------------------------------------------------------------------
 // Splunk + OpenTelemetry correlation (ILogger and traces)
 // -----------------------------------------------------------------------------
-// This sample follows Splunk's OpenTelemetry guidance for .NET: instrument the app
-// with the OpenTelemetry SDK, export OTLP to the Splunk OpenTelemetry Collector
-// running as a sidecar in the same Container App (shared network namespace), and
-// let the collector forward signals to Splunk Platform (HEC).
+// Instrumentation is automatic — no manual ActivitySource spans:
+// - AddAspNetCoreInstrumentation(): one "server" span per incoming HTTP request.
+// - AddHttpClientInstrumentation(): child spans for each outgoing HttpClient call.
 //
-// Trace ↔ log correlation (what your teams should know):
-// - ASP.NET Core creates a root "server" span (Activity) per HTTP request.
-// - When you call ILogger inside that request (or inside a child Activity you create),
-//   the OpenTelemetry logging integration attaches OpenTelemetry.BlobTraceId,
-//   OpenTelemetry.BlobSpanId, and related fields to the LogRecord (OTLP logs).
-// - In Splunk Search, use the trace_id / trace ID field from log events to join with
-//   trace data ingested for the same request (same trace_id).
+// The /work endpoint triggers two same-process HTTP GETs to this app (loopback).
+// In Splunk Observability you should see one trace: inbound GET /work plus two
+// HTTP GET client spans (e.g. /healthz and /), all produced by the agents.
 //
-// References (client documentation):
-// - Splunk:  https://docs.splunk.com/observability/en/gdi/get-data-in/application/otel-dotnet/instrumentation/instrument-dotnet-application.html
-// - OTel .NET logging / correlation:
-//   https://opentelemetry.io/docs/languages/dotnet/logs/correlation/
+// Trace ↔ log correlation:
+// - While handling a request, Activity.Current is the ASP.NET server span (and
+//   nested client spans during awaited HttpClient calls). ILogger emits
+//   OpenTelemetry log records with trace_id / span_id when the integration is on.
+// - In Splunk Cloud (HEC logs), use the same trace_id to align with Observability traces.
 //
-// Environment variables used in this lab (set in Azure Container Apps):
-// - OTEL_SERVICE_NAME           → Splunk "service.name" resource attribute
-// - OTEL_RESOURCE_ATTRIBUTES    → e.g. deployment.environment=lab
-// - OTEL_EXPORTER_OTLP_ENDPOINT → points at the sidecar collector (127.0.0.1:4317)
+// References:
+// - https://docs.splunk.com/observability/en/gdi/get-data-in/application/otel-dotnet/instrumentation/instrument-dotnet-application.html
+// - https://opentelemetry.io/docs/languages/dotnet/logs/correlation/
+//
+// Container env (Azure / local): OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES,
+// OTEL_EXPORTER_OTLP_ENDPOINT (sidecar collector on 127.0.0.1:4317).
 // -----------------------------------------------------------------------------
 
 using System.Diagnostics;
@@ -33,15 +31,9 @@ using OpenTelemetry.Trace;
 
 internal static class Program
 {
-    /// <summary>Logger category type (avoids ILogger&lt;Program&gt; when Program is static).</summary>
     private sealed class WorkLog
     {
     }
-
-    /// <summary>Name passed to <see cref="ActivitySource"/> — must match AddSource(...) below.</summary>
-    private const string LabActivitySourceName = "AcaOtelLab.Lab";
-
-    private static readonly ActivitySource LabActivity = new(LabActivitySourceName);
 
     private static void Main(string[] args)
     {
@@ -64,7 +56,7 @@ internal static class Program
                 new("deployment.environment", deploymentEnvironment),
             });
 
-        // Logging: OpenTelemetry exporter enriches log records with trace context when Activity.Current is set.
+        // ILogger → OTLP logs, with trace/span IDs when there is an active Activity.
         builder.Logging.AddOpenTelemetry(options =>
         {
             options.SetResourceBuilder(resourceBuilder);
@@ -72,6 +64,9 @@ internal static class Program
             options.IncludeScopes = true;
             options.AddOtlpExporter();
         });
+
+        // Automatic tracing only (no custom ActivitySource).
+        builder.Services.AddHttpClient();
 
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r
@@ -81,7 +76,6 @@ internal static class Program
                     new("deployment.environment", deploymentEnvironment),
                 }))
             .WithTracing(tracing => tracing
-                .AddSource(LabActivitySourceName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddOtlpExporter())
@@ -92,6 +86,8 @@ internal static class Program
 
         var app = builder.Build();
 
+        var loopbackBase = LoopbackBaseUri();
+
         app.MapGet("/", () => Results.Ok(new
         {
             service = serviceName,
@@ -101,45 +97,55 @@ internal static class Program
 
         app.MapGet("/healthz", () => Results.Ok(new { status = "healthy" }));
 
-        // Produces a trace with multiple spans: ASP.NET inbound + lab.workflow + two children.
-        app.MapGet("/work", async Task<IResult> (ILogger<WorkLog> logger, CancellationToken ct) =>
+        // Two automatic HttpClient spans (children of the incoming /work span).
+        app.MapGet("/work", async Task<IResult> (
+            IHttpClientFactory httpFactory,
+            ILogger<WorkLog> logger,
+            CancellationToken ct) =>
         {
             logger.LogInformation(
-                "Lab /work: start. Splunk tip — filter logs and traces on trace_id once you have one ID.");
+                "work: start — trace_id on this log comes from automatic ASP.NET Core instrumentation");
 
-            using var workflow = LabActivity.StartActivity("lab.workflow");
-            workflow?.SetTag("lab.scenario", "multi-span-demo");
+            var client = httpFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
 
-            logger.LogInformation("Lab /work: inside lab.workflow span — log record should carry the same trace_id.");
+            using var r1 = await client.GetAsync(new Uri(loopbackBase, "/healthz"), ct);
+            logger.LogInformation(
+                "work: after automatic HTTP client call to /healthz, status={Status}",
+                (int)r1.StatusCode);
 
-            await Task.Delay(Random.Shared.Next(8, 40), ct);
+            using var r2 = await client.GetAsync(new Uri(loopbackBase, "/"), ct);
+            logger.LogInformation(
+                "work: after automatic HTTP client call to /, status={Status}",
+                (int)r2.StatusCode);
 
-            using (var fetch = LabActivity.StartActivity("lab.fetch-details"))
-            {
-                fetch?.SetTag("lab.child", "1");
-                logger.LogInformation("Lab /work: inner span lab.fetch-details");
-                await Task.Delay(Random.Shared.Next(8, 40), ct);
-            }
-
-            using (var persist = LabActivity.StartActivity("lab.persist-result"))
-            {
-                persist?.SetTag("lab.child", "2");
-                logger.LogInformation("Lab /work: inner span lab.persist-result");
-                await Task.Delay(Random.Shared.Next(8, 40), ct);
-            }
-
-            var traceId = Activity.Current?.TraceId.ToString() ?? workflow?.TraceId.ToString();
-            logger.LogInformation("Lab /work: complete. trace_id={TraceId}", traceId);
+            var traceId = Activity.Current?.TraceId.ToString();
+            logger.LogInformation("work: done. trace_id={TraceId}", traceId);
 
             return Results.Ok(new
             {
                 status = "ok",
                 trace_id = traceId,
-                hint = "Search Splunk logs for this trace_id and open the matching trace.",
+                hint = "Observability: one inbound span + two HTTP client spans; logs share trace_id.",
             });
         });
 
         app.Run();
+    }
+
+    /// <summary>Use loopback to this process (Dockerfile sets ASPNETCORE_URLS=http://+:8080).</summary>
+    private static Uri LoopbackBaseUri()
+    {
+        var raw = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://127.0.0.1:8080";
+        var first = raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()
+            ?? "http://127.0.0.1:8080";
+        first = first.Replace("+", "127.0.0.1", StringComparison.Ordinal);
+        if (!Uri.TryCreate(first, UriKind.Absolute, out var uri))
+        {
+            uri = new Uri("http://127.0.0.1:8080");
+        }
+
+        return new Uri($"{uri.Scheme}://{uri.Host}:{uri.Port}");
     }
 
     private static string? ParseDeploymentEnvironmentFromOtelResourceAttributes()
