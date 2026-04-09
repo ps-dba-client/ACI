@@ -119,6 +119,8 @@ terraform output public_url
 ```powershell
 $base = terraform -chdir=terraform output -raw public_url
 python .\scripts\simulate_traffic.py --base-url $base
+# If Python reports SSL certificate errors (common behind TLS inspection), lab-only:
+python .\scripts\simulate_traffic.py --base-url $base --insecure
 ```
 
 Then in **Splunk Search** (examples — adjust field names to your sourcetype parsing):
