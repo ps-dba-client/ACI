@@ -116,10 +116,24 @@ terraform output public_url
 
 ## Generate traffic (validation)
 
+From the **dotnet** folder (recommended — no manual URL):
+
+```powershell
+python .\scripts\simulate_traffic.py --from-terraform
+python .\scripts\simulate_traffic.py --from-terraform --insecure
+```
+
+From **`scripts\`** the same command works (it finds `..\terraform` next to the script):
+
+```powershell
+cd scripts
+python .\simulate_traffic.py --from-terraform --insecure
+```
+
+Alternative: set the URL yourself (must be run from the **dotnet** root so `terraform -chdir=terraform` resolves):
+
 ```powershell
 $base = terraform -chdir=terraform output -raw public_url
-python .\scripts\simulate_traffic.py --base-url $base
-# If Python reports SSL certificate errors (common behind TLS inspection), lab-only:
 python .\scripts\simulate_traffic.py --base-url $base --insecure
 ```
 

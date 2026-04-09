@@ -2,10 +2,13 @@
 r"""
 Generate HTTP traffic against the lab Container App to produce traces and logs.
 
-Windows (PowerShell), from repo root (azure/aci/dotnet):
-  python .\scripts\simulate_traffic.py --base-url https://YOUR_APP.azurecontainerapps.io
+From repo root (azure/aci/dotnet) using Terraform output:
+  python3 ./scripts/simulate_traffic.py --from-terraform
 
-Linux/macOS:
+From the scripts/ folder (same as above; resolves ../terraform automatically):
+  python3 simulate_traffic.py --from-terraform
+
+With an explicit public URL:
   python3 ./scripts/simulate_traffic.py --base-url https://YOUR_APP.azurecontainerapps.io
 
 If TLS verification fails (e.g. corporate SSL inspection), add --insecure for lab use only.
@@ -16,18 +19,87 @@ from __future__ import annotations
 import argparse
 import random
 import ssl
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+
+def default_terraform_dir() -> Path:
+    """Lab layout: dotnet/scripts/this.py -> dotnet/terraform/."""
+    return Path(__file__).resolve().parent.parent / "terraform"
+
+
+def resolve_base_url_from_terraform(terraform_dir: Path) -> str:
+    if not terraform_dir.is_dir():
+        raise SystemExit(
+            f"Terraform directory not found: {terraform_dir}\n"
+            "Pass --terraform-dir PATH, or run from the dotnet lab root "
+            "(folder that contains terraform/ and scripts/)."
+        )
+    try:
+        proc = subprocess.run(
+            ["terraform", "output", "-raw", "public_url"],
+            cwd=str(terraform_dir),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        raise SystemExit("terraform CLI not found on PATH.") from None
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(
+            "terraform output failed. Applied the stack at least once?\n"
+            f"  {e.stderr or e.stdout or e}"
+        ) from e
+    url = (proc.stdout or "").strip()
+    if not url:
+        raise SystemExit(
+            "terraform returned an empty public_url. Run terraform apply in "
+            f"{terraform_dir} first."
+        )
+    return url.rstrip("/")
+
+
+def require_absolute_http_url(base: str, *, source: str) -> str:
+    base = base.strip().rstrip("/")
+    if not base:
+        raise SystemExit(
+            f"Empty --base-url ({source}).\n"
+            "If you use shell substitution, run from the dotnet root and use:\n"
+            '  terraform -chdir=terraform output -raw public_url\n'
+            "Or run this script with --from-terraform (works from scripts/ too)."
+        )
+    lower = base.lower()
+    if not (lower.startswith("http://") or lower.startswith("https://")):
+        raise SystemExit(
+            f"Invalid --base-url ({source!r}): must start with http:// or https://\n"
+            f"Got: {base!r}\n"
+            "Tip: use --from-terraform instead of a broken subshell."
+        )
+    return base
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate sample load for AcaOtelLab.")
-    parser.add_argument(
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument(
         "--base-url",
-        required=True,
+        metavar="URL",
         help="HTTPS base URL of the Container App (no trailing slash required).",
+    )
+    src.add_argument(
+        "--from-terraform",
+        action="store_true",
+        help="Set base URL from `terraform output -raw public_url` (default dir: ../terraform next to this script).",
+    )
+    parser.add_argument(
+        "--terraform-dir",
+        type=Path,
+        default=None,
+        help="Terraform folder when using --from-terraform (default: lab's terraform/).",
     )
     parser.add_argument("--requests", type=int, default=40, help="Total HTTP calls.")
     parser.add_argument("--sleep-ms", type=int, default=150, help="Pause between calls.")
@@ -38,13 +110,22 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    base = args.base_url.rstrip("/")
+    if args.from_terraform:
+        tf_dir = args.terraform_dir or default_terraform_dir()
+        tf_dir = tf_dir.resolve()
+        base = require_absolute_http_url(
+            resolve_base_url_from_terraform(tf_dir),
+            source="terraform output public_url",
+        )
+    else:
+        base = require_absolute_http_url(args.base_url or "", source="--base-url")
+
     ssl_ctx: ssl.SSLContext | None = None
     if args.insecure:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
-    # Weight /work higher so Splunk shows multi-span traces often.
+
     paths = ["/", "/healthz", "/work", "/work", "/work"]
 
     for i in range(args.requests):
