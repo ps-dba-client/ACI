@@ -1,13 +1,22 @@
 # Copy to terraform.tfvars (gitignored) and fill in. Do not commit secrets.
 
-location                 = "eastus2"
-prefix                   = "acadotlab"
-image_tag                = "v1"
+location       = "eastus2"
+prefix         = "acadotlab"
+image_tag      = "v1"
+# Optional: after rebuilding only the collector image in ACR, bump this tag and apply.
+# collector_image_tag = "v2"
+
 min_replicas             = 0
 max_replicas             = 2
 otel_service_name        = "aca-dotnet-otel-lab"
-deployment_environment    = "lab"
-splunk_hec_url           = "https://http-inputs-yourstack.splunkcloud.com/services/collector/event"
-splunk_index             = "your_index"
-splunk_source            = "aci"
-splunk_hec_token         = "REPLACE_WITH_HEC_TOKEN"
+deployment_environment   = "lab"
+
+# Splunk Cloud — OTLP logs → HEC only
+splunk_hec_url   = "https://http-inputs-yourstack.splunkcloud.com/services/collector/event"
+splunk_index     = "your_index"
+splunk_source    = "aci"
+splunk_hec_token = "REPLACE_WITH_HEC_TOKEN"
+
+# Splunk Observability Cloud — OTLP traces + metrics (realm builds ingest.<realm>.signalfx.com)
+splunk_observability_realm          = "us1"
+splunk_observability_access_token   = "REPLACE_WITH_O11Y_ACCESS_TOKEN"

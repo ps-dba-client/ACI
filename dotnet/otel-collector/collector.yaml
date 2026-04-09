@@ -1,6 +1,8 @@
-# Splunk OpenTelemetry Collector (sidecar) — OTLP in, Splunk HEC out.
-# Secrets (HEC token, etc.) are supplied via environment variables from Azure Container Apps secrets — not stored in this file.
-# Variable expansion follows the OpenTelemetry Collector confmap env provider (e.g. ${env:SPLUNK_HEC_TOKEN}).
+# Sidecar: OTLP in from the .NET app.
+# - Logs  → Splunk Cloud (HTTP Event Collector)
+# - Traces + metrics → Splunk Observability Cloud (realm via SPLUNK_INGEST_URL / SPLUNK_API_URL)
+#
+# Splunk distribution 0.108.x uses exporter type "otlphttp" (not otlp_http).
 
 extensions:
   health_check:
@@ -24,8 +26,20 @@ processors:
       - key: deployment.environment
         value: "${env:DEPLOYMENT_ENVIRONMENT}"
         action: upsert
+  resourcedetection:
+    detectors: [azure, system]
+    override: true
 
 exporters:
+  otlphttp:
+    traces_endpoint: "${env:SPLUNK_INGEST_URL}/v2/trace/otlp"
+    headers:
+      X-SF-Token: "${env:SPLUNK_ACCESS_TOKEN}"
+  signalfx:
+    access_token: "${env:SPLUNK_ACCESS_TOKEN}"
+    api_url: "${env:SPLUNK_API_URL}"
+    ingest_url: "${env:SPLUNK_INGEST_URL}"
+    sync_host_metadata: true
   splunk_hec:
     token: "${env:SPLUNK_HEC_TOKEN}"
     endpoint: "${env:SPLUNK_HEC_URL}"
@@ -41,13 +55,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource/splunk_meta]
-      exporters: [splunk_hec]
-    logs:
-      receivers: [otlp]
-      processors: [memory_limiter, batch, resource/splunk_meta]
-      exporters: [splunk_hec]
+      processors: [memory_limiter, batch, resourcedetection, resource/splunk_meta]
+      exporters: [otlphttp, signalfx]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource/splunk_meta]
+      processors: [memory_limiter, batch, resourcedetection, resource/splunk_meta]
+      exporters: [signalfx]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resourcedetection, resource/splunk_meta]
       exporters: [splunk_hec]
