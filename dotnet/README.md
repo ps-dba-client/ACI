@@ -101,7 +101,7 @@ $acr = terraform output -raw acr_name
 cd ..
 
 az acr build -g $rg -r $acr -f Dockerfile -t aca-otel-dotnet:v1 .
-az acr build -g $rg -r $acr -f Dockerfile -t aca-otel-collector:v1 .\otel-collector
+az acr build -g $rg -r $acr -f otel-collector/Dockerfile -t aca-otel-collector:v1 .
 
 cd terraform
 terraform apply

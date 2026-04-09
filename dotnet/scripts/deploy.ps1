@@ -42,7 +42,7 @@ Write-Host "=== Step 2/3: ACR cloud build (dotnet app + Splunk OTel collector si
 az acr build --resource-group $Rg --registry $Acr --file Dockerfile --image "aca-otel-dotnet:$ImageTag" $Root
 if ($LASTEXITCODE -ne 0) { throw "acr build (dotnet) failed" }
 
-az acr build --resource-group $Rg --registry $Acr --file Dockerfile --image "aca-otel-collector:$ImageTag" "$Root\otel-collector"
+az acr build --resource-group $Rg --registry $Acr --file otel-collector/Dockerfile --image "aca-otel-collector:$ImageTag" $Root
 if ($LASTEXITCODE -ne 0) { throw "acr build (collector) failed" }
 
 Write-Host "=== Step 3/3: Terraform apply (Container App) ===" -ForegroundColor Cyan
