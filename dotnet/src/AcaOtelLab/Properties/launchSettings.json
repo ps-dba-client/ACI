@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5088",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OTEL_SERVICE_NAME": "aca-dotnet-otel-lab",
+        "OTEL_RESOURCE_ATTRIBUTES": "deployment.environment=dev",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
+      }
+    }
+  }
+}
